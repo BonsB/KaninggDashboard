@@ -1,151 +1,134 @@
 import streamlit as st
 import pandas as pd
-import math
-from pathlib import Path
+import plotly.express as px
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
+# --- Configuration & Styling ---
+st.set_page_config(page_title="Executive Student Insights", layout="wide")
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+# คลุมโทนสีตามที่คุณกำหนด (แก้เลขศูนย์ในรหัสสีให้ถูกต้อง)
+theme_colors = ['#FD536D', '#FF8957', '#EED054', '#CAD849', '#00C182', '#429EB0']
 
+# --- Load Data ---
 @st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+def load_data():
+    path = '/workspaces/KaninggDashboard/data/student_dropout_dataset_v3.csv'
+    df = pd.read_csv(path)
+    cols = ['Age', 'Gender', 'Family_Income', 'Study_Hours_per_Day', 'Travel_Time_Minutes', 'Dropout']
+    df = df[cols].dropna()
+    df['Dropout_Status'] = df['Dropout'].map({1: 'Dropped Out', 0: 'Stayed'})
+    return df
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+df = load_data()
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+# --- Sidebar Filters ---
+with st.sidebar:
+    st.header("🛠️ Data Filters")
+    st.info("ปรับแต่งช่วงข้อมูลที่ต้องการวิเคราะห์")
+    age_range = st.slider("ช่วงอายุ (Age)", 
+                          int(df['Age'].min()), int(df['Age'].max()), 
+                          (int(df['Age'].min()), int(df['Age'].max())))
+    genders = st.multiselect("เลือกเพศ (Gender)", options=df['Gender'].unique(), default=df['Gender'].unique())
+    st.divider()
+    st.write("📌 *Dashboard จะอัปเดตอัตโนมัติ*")
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+mask = (df['Age'].between(*age_range)) & (df['Gender'].isin(genders))
+df_filtered = df[mask]
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
+# --- MAIN DASHBOARD ---
+st.title("🚀 Student Analytics Executive Summary")
+st.markdown("---")
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+# --- 1. OVERALL METRICS (Header Row) ---
+m1, m2, m3, m4 = st.columns(4)
+with m1:
+    st.metric("Age (Average)", f"{df_filtered['Age'].mean():.1f} yrs")
+with m2:
+    st.metric("Avg. Family Income", f"{df_filtered['Family_Income'].mean():,.0f} ฿")
+with m3:
+    st.metric("Study Hours/Day", f"{df_filtered['Study_Hours_per_Day'].mean():.1f} hrs")
+with m4:
+    dropout_rate = (df_filtered['Dropout'].mean() * 100)
+    st.metric("Dropout Rate", f"{dropout_rate:.1f}%")
 
-    return gdp_df
+st.markdown("###") # เพิ่มช่องว่าง
 
-gdp_df = get_gdp_data()
+# --- 2. DEMOGRAPHICS & STATUS (Main Row) ---
+col_left, col_right = st.columns([1, 1])
 
-# -----------------------------------------------------------------------------
-# Draw the actual page
+with col_left:
+    with st.container(border=True):
+        st.subheader("👥 Dropout by Age Distribution")
+        fig_age = px.histogram(df_filtered, x='Age', color='Dropout_Status',
+                              barmode='group',
+                              color_discrete_map={'Stayed': theme_colors[5], 'Dropped Out': theme_colors[0]})
+        fig_age.update_layout(margin=dict(l=20, r=20, t=30, b=20), height=350)
+        st.plotly_chart(fig_age, use_container_width=True)
 
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
+with col_right:
+    with st.container(border=True):
+        st.subheader("🚻 Dropout Count by Gender")
+        gender_stats = df_filtered.groupby(['Gender', 'Dropout_Status']).size().reset_index(name='Count')
+        fig_gen = px.bar(gender_stats, x='Gender', y='Count', color='Dropout_Status',
+                        barmode='stack',
+                        color_discrete_map={'Stayed': theme_colors[4], 'Dropped Out': theme_colors[1]})
+        fig_gen.update_layout(margin=dict(l=20, r=20, t=30, b=20), height=350)
+        st.plotly_chart(fig_gen, use_container_width=True)
 
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
+# --- 3. DEEP ANALYSIS (Scatter & Heatmap) ---
+st.markdown("### 🎯 Relationship & Correlation Analysis")
+col_scat, col_heat = st.columns([1.5, 1])
 
-# Add some spacing
-''
-''
+with col_scat:
+    with st.container(border=True):
+        c_a, c_b = st.columns(2)
+        with c_a: x_val = st.selectbox("แกน X", ['Family_Income', 'Study_Hours_per_Day', 'Travel_Time_Minutes'], index=0)
+        with c_b: y_val = st.selectbox("แกน Y", ['Study_Hours_per_Day', 'Family_Income', 'Travel_Time_Minutes'], index=0)
+        
+        fig_scatter = px.scatter(df_filtered, x=x_val, y=y_val, color='Dropout_Status', 
+                                hover_name='Gender', size_max=12,
+                                color_discrete_map={'Stayed': theme_colors[5], 'Dropped Out': theme_colors[0]},
+                                template="plotly_white")
+        fig_scatter.update_layout(height=400)
+        st.plotly_chart(fig_scatter, use_container_width=True)
 
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
+with col_heat:
+    with st.container(border=True):
+        st.write("**Correlation Matrix**")
+        corr = df_filtered[['Age', 'Family_Income', 'Study_Hours_per_Day', 'Travel_Time_Minutes', 'Dropout']].corr()
+        fig_heat = px.imshow(corr, text_auto=".2f", 
+                            color_continuous_scale=[theme_colors[0], theme_colors[2], theme_colors[4]])
+        fig_heat.update_layout(height=435, margin=dict(t=10))
+        st.plotly_chart(fig_heat, use_container_width=True)
 
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
+# --- 4. BEHAVIORAL INSIGHTS (Bottom Row) ---
+row3_1, row3_2, row3_3 = st.columns([1, 1, 1])
 
-countries = gdp_df['Country Code'].unique()
+with row3_1:
+    with st.container(border=True):
+        st.write("**Travel Impact**")
+        fig_travel = px.box(df_filtered, x='Dropout_Status', y='Travel_Time_Minutes',
+                           color='Dropout_Status',
+                           color_discrete_map={'Stayed': theme_colors[3], 'Dropped Out': theme_colors[0]})
+        fig_travel.update_layout(height=300, showlegend=False)
+        st.plotly_chart(fig_travel, use_container_width=True)
 
-if not len(countries):
-    st.warning("Select at least one country")
+with row3_2:
+    with st.container(border=True):
+        st.write("**Student Proportion**")
+        fig_pie = px.pie(df_filtered, names='Dropout_Status', hole=0.5,
+                        color_discrete_sequence=[theme_colors[5], theme_colors[0]])
+        fig_pie.update_layout(height=300, margin=dict(t=0, b=0, l=0, r=0))
+        st.plotly_chart(fig_pie, use_container_width=True)
 
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
+with row3_3:
+    with st.container(border=True):
+        st.write("**Avg Income by Gender**")
+        inc_gen = df_filtered.groupby('Gender')['Family_Income'].mean().reset_index()
+        fig_inc = px.bar(inc_gen, x='Gender', y='Family_Income', 
+                         color_discrete_sequence=[theme_colors[1]])
+        fig_inc.update_layout(height=300)
+        st.plotly_chart(fig_inc, use_container_width=True)
 
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+# --- Table ---
+with st.expander("📂 View Filtered Dataset"):
+    st.dataframe(df_filtered, use_container_width=True)
