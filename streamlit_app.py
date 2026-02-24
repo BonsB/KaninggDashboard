@@ -11,7 +11,7 @@ theme_colors = ['#FD536D', '#FF8957', '#EED054', '#CAD849', '#00C182', '#429EB0'
 # --- Load Data ---
 @st.cache_data
 def load_data():
-    path = '/workspaces/KaninggDashboard/data/student_dropout_dataset_v3.csv'
+    path = 'student_dropout_dataset_v3.csv'
     df = pd.read_csv(path)
     cols = ['Age', 'Gender', 'Family_Income', 'Study_Hours_per_Day', 'Travel_Time_Minutes', 'Dropout']
     df = df[cols].dropna()
