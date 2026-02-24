@@ -11,7 +11,7 @@ theme_colors = ['#FD536D', '#FF8957', '#EED054', '#CAD849', '#00C182', '#429EB0'
 # --- Load Data ---
 @st.cache_data
 def load_data():
-    path = 'student_dropout_dataset_v3.csv'
+    path = '/workspaces/KaninggDashboard/data/student_dropout_dataset_v3.csv'
     df = pd.read_csv(path)
     cols = ['Age', 'Gender', 'Family_Income', 'Study_Hours_per_Day', 'Travel_Time_Minutes', 'Dropout']
     df = df[cols].dropna()
@@ -76,29 +76,74 @@ with col_right:
 
 # --- 3. DEEP ANALYSIS (Scatter & Heatmap) ---
 st.markdown("### 🎯 Relationship & Correlation Analysis")
-col_scat, col_heat = st.columns([1.5, 1])
-
-with col_scat:
+# --- Scatter (1 column) ---
+col_scat = st.columns([1])
+with col_scat[0]:
     with st.container(border=True):
         c_a, c_b = st.columns(2)
-        with c_a: x_val = st.selectbox("แกน X", ['Family_Income', 'Study_Hours_per_Day', 'Travel_Time_Minutes'], index=0)
-        with c_b: y_val = st.selectbox("แกน Y", ['Study_Hours_per_Day', 'Family_Income', 'Travel_Time_Minutes'], index=0)
-        
-        fig_scatter = px.scatter(df_filtered, x=x_val, y=y_val, color='Dropout_Status', 
-                                hover_name='Gender', size_max=12,
-                                color_discrete_map={'Stayed': theme_colors[5], 'Dropped Out': theme_colors[0]},
-                                template="plotly_white")
+
+        with c_a:
+            x_val = st.selectbox(
+                "แกน X",
+                ['Family_Income', 'Study_Hours_per_Day', 'Travel_Time_Minutes'],
+                index=0
+            )
+
+        with c_b:
+            # แนะนำให้ default คนละตัวกับ X กันสับสน
+            y_val = st.selectbox(
+                "แกน Y",
+                ['Study_Hours_per_Day', 'Family_Income', 'Travel_Time_Minutes'],
+                index=1
+            )
+
+        fig_scatter = px.scatter(
+            df_filtered,
+            x=x_val,
+            y=y_val,
+            color='Dropout_Status',
+            hover_name='Gender',
+            size_max=12,
+            color_discrete_map={'Stayed': theme_colors[5], 'Dropped Out': theme_colors[0]},
+            template="plotly_white"
+        )
         fig_scatter.update_layout(height=400)
         st.plotly_chart(fig_scatter, use_container_width=True)
 
-with col_heat:
+
+# --- Heatmap (1 column) ---
+col_heat = st.columns([1])
+with col_heat[0]:
     with st.container(border=True):
-        st.write("**Correlation Matrix**")
-        corr = df_filtered[['Age', 'Family_Income', 'Study_Hours_per_Day', 'Travel_Time_Minutes', 'Dropout']].corr()
-        fig_heat = px.imshow(corr, text_auto=".2f", 
-                            color_continuous_scale=[theme_colors[0], theme_colors[2], theme_colors[4]])
-        fig_heat.update_layout(height=435, margin=dict(t=10))
-        st.plotly_chart(fig_heat, use_container_width=True)
+        st.write("**Correlation Matrix (Square View)**")
+
+        # 1) เตรียมข้อมูล
+        df_analysis = df_filtered.drop(columns=['Student_ID'], errors='ignore')
+        df_dummies = pd.get_dummies(df_analysis, drop_first=False)
+
+        # 2) corr
+        corr = df_dummies.corr(numeric_only=True).fillna(0)
+
+        # 3) heatmap
+        fig_heat = px.imshow(
+            corr,
+            text_auto=".2f",
+            color_continuous_scale=[theme_colors[0], theme_colors[2], theme_colors[4]],
+            aspect="equal"   # ✅ บังคับสัดส่วนให้เท่ากัน
+        )
+
+        square_size = 850
+        fig_heat.update_layout(
+            autosize=False,  # ✅ สำคัญมากถ้าจะ fix เป็นสี่เหลี่ยม
+            width=square_size,
+            height=square_size,
+            margin=dict(t=50, b=50, l=50, r=50),
+            xaxis_tickangle=-45,
+            coloraxis_colorbar=dict(thickness=15, len=0.5)
+        )
+
+        # ปิด container width เพื่อให้คง width/height ที่ตั้งไว้
+        st.plotly_chart(fig_heat, use_container_width=False)
 
 # --- 4. BEHAVIORAL INSIGHTS (Bottom Row) ---
 row3_1, row3_2, row3_3 = st.columns([1, 1, 1])
